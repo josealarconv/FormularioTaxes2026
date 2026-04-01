@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Preparación de Impuestos</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- React & ReactDOM -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  
+  <!-- Babel -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  
+  <!-- HEIC to JPG Converter -->
+  <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
+
+  <style>
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+    .animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
+    body.signing { overflow: hidden; touch-action: none; }
+  </style>
+</head>
+<body class="bg-gray-100 font-sans antialiased text-gray-800">
+  
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    // --- COMPONENTES UI REUTILIZABLES ---
+    const InputField = ({ label, icon, type = "text", placeholder, value, onChange, required = true }) => {
+      const isDate = type === 'date';
+      const isEmptyDate = isDate && !value;
+      return (
+        <div className="flex flex-col space-y-1.5 mb-4 min-w-0">
+          <label className="text-sm font-semibold text-gray-700 truncate">{label} {required && <span className="text-red-500">*</span>}</label>
+          <div className="relative w-full">
+            {icon && <i className={`${icon} absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 z-10 pointer-events-none text-lg`}></i>}
+            {isEmptyDate && <div className={`absolute top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none z-10 ${icon ? 'left-10' : 'left-3'}`}>mm/dd/yyyy</div>}
+            <input 
+              type={type} 
+              required={required}
+              className={`w-full min-h-[46px] bg-white appearance-none p-2.5 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all ${icon ? 'pl-10' : 'pl-3'} ${isEmptyDate ? 'text-transparent' : 'text-gray-800'}`} 
+              placeholder={placeholder} 
+              value={value} 
+              onChange={(e) => onChange(e.target.value)} 
+            />
+          </div>
+        </div>
+      );
+    };
+
+    const SelectField = ({ label, value, onChange, options, required = true }) => (
+      <div className="flex flex-col space-y-1.5 mb-4 min-w-0">
+        <label className="text-sm font-semibold text-gray-700 truncate">{label} {required && <span className="text-red-500">*</span>}</label>
+        <select required={required} className="w-full min-h-[46px] p-2.5 border border-gray-300 rounded-lg shadow-sm outline-none bg-white appearance-none focus:ring-2 focus:ring-blue-500 transition-all" value={value} onChange={(e) => onChange(e.target.value)}>
+          <option value="">-- Seleccione --</option>
+          {options.map((opt, i) => <option key={i} value={opt.value}>{opt.label}</option>)}
+        </select>
+      </div>
+    );
+
+    const TextAreaField = ({ label, icon, placeholder, value, onChange, required = true }) => (
+      <div className="flex flex-col space-y-1.5 mb-4 min-w-0">
+        <label className="text-sm font-semibold text-gray-700 truncate">{label} {required && <span className="text-red-500">*</span>}</label>
+        <div className="relative w-full">
+          {icon && <i className={`${icon} absolute left-3 top-3 text-gray-400 z-10 pointer-events-none text-lg`}></i>}
+          <textarea 
+            required={required}
+            className={`w-full min-h-[100px] bg-white appearance-none p-2.5 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all resize-y ${icon ? 'pl-10' : 'pl-3'} text-gray-800`} 
+            placeholder={placeholder} 
+            value={value} 
+            onChange={(e) => onChange(e.target.value)} 
+          />
+        </div>
+      </div>
+    );
+
+    const FileUploadField = ({ label, section, field, uniqueId, file, onChange, required = true }) => {
+      const inputId = uniqueId || `${section}-${field}`;
+      return (
+        <div className="flex flex-col space-y-1.5 mb-4 min-w-0">
+          <label className="text-sm font-semibold text-gray-700 truncate">{label} {required && <span className="text-red-500">*</span>}</label>
+          <div className="relative w-full">
+            {/* Input oculto pero validable por HTML5 */}
+            <input type="file" id={inputId} style={{ opacity: 0, position: 'absolute', zIndex: -1, width: '1px', height: '1px' }} accept="image/*,.pdf" required={required && !file} onChange={(e) => onChange(section, field, e.target.files[0])} />
+            <label htmlFor={inputId} className={`flex items-center justify-center w-full min-h-[46px] p-3 border-2 border-dashed rounded-lg cursor-pointer transition-all ${file ? 'border-green-500 bg-green-50' : 'border-gray-300 bg-gray-50 hover:bg-gray-100'}`}>
+              {file ? (
+                <div className="flex items-center text-green-700 overflow-hidden"><i className="fa-solid fa-check-circle mr-2 flex-shrink-0 text-xl"></i><span className="text-sm truncate max-w-[200px]">{file.name}</span></div>
+              ) : (
+                <div className="flex items-center text-gray-500"><i className="fa-solid fa-camera mr-2 flex-shrink-0 text-xl"></i><span className="text-sm truncate">Capturar/Subir</span></div>
+              )}
+            </label>
+          </div>
+        </div>
+      );
+    };
+
+    const App = () => {
+      // === CONFIGURACIÓN ===
+      const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzJZaEL07D74Yo4PdcjRwqhG2GMlK_YAo9Or7kV7If8zuOvjlOlQf2MsW4WyeJ-9QEqlw/exec"; 
+      
+      const [formId, setFormId] = useState('');
+      const [isSubmitting, setIsSubmitting] = useState(false);
+      const [submitStatus, setSubmitStatus] = useState(null);
+      const [conversionWarnings, setConversionWarnings] = useState([]); 
+      
+      // FIRMA DIGITAL
+      const canvasRef = useRef(null);
+      const [isDrawing, setIsDrawing] = useState(false);
+      const [hasFirma, setHasFirma] = useState(false);
+      
+      const [formData, setFormData] = useState({
+        tipoDeclaracion: '',
+        titular: {
+          declaroAnterior: '', forma1040Doc: null,
+          nombres: '', apellidos: '', dob: '', direccion: '', telefono: '', correo: '', estadoCivil: '',
+          ssnNumero: '', ssnDoc: null, tipoId: '', idDoc: null, esResidente: '', permisoDoc: null
+        },
+        conyuge: {
+          nombres: '', apellidos: '', dob: '', direccion: '', telefono: '', correo: '',
+          ssnNumero: '', ssnDoc: null, tipoId: '', idDoc: null, esResidente: '', permisoDoc: null, matrimonioDoc: null
+        },
+        dependientes: [], 
+        ingresos: [],
+        banco: { titularCuenta: '', nombre: '', tipo: '', ruta: '', cuenta: '' },
+        seguros: [],
+        vehiculos: [],
+        documentosAdicionales: [], 
+        autorizacion: { anioTributario: new Date().getFullYear() - 1 }
+      });
+
+      useEffect(() => {
+        setFormId(Math.random().toString(36).substring(2, 10).toLowerCase());
+      }, []);
+
+      // LÓGICA DE FIRMA
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        if (canvas) {
+          const preventScroll = (e) => e.preventDefault();
+          const handleTouchStart = (e) => { document.body.classList.add('signing'); preventScroll(e); startDrawing(e); };
+          const handleTouchMove = (e) => { preventScroll(e); draw(e); };
+          const handleTouchEnd = (e) => { document.body.classList.remove('signing'); stopDrawing(); };
+          
+          canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+          canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+          canvas.addEventListener('touchend', handleTouchEnd);
+          
+          return () => {
+            canvas.removeEventListener('touchstart', handleTouchStart);
+            canvas.removeEventListener('touchmove', handleTouchMove);
+            canvas.removeEventListener('touchend', handleTouchEnd);
+          };
+        }
+      }, [canvasRef.current, isDrawing]);
+
+      const getCoordinates = (e) => {
+        const canvas = canvasRef.current;
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+        const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+        return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
+      };
+
+      const startDrawing = (e) => {
+        const { x, y } = getCoordinates(e);
+        const ctx = canvasRef.current.getContext('2d');
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineWidth = 3;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.strokeStyle = "#1e3a8a"; 
+        setIsDrawing(true);
+      };
+
+      const draw = (e) => {
+        if (!isDrawing) return;
+        const { x, y } = getCoordinates(e);
+        const ctx = canvasRef.current.getContext('2d');
+        ctx.lineTo(x, y);
+        ctx.stroke();
+        setHasFirma(true);
+      };
+
+      const stopDrawing = () => setIsDrawing(false);
+
+      const clearSignature = () => {
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        setHasFirma(false);
+      };
+
+      // MANEJADORES DE ESTADO
+      const handleInputChange = (section, field, value) => {
+        if (section === 'general') setFormData({ ...formData, [field]: value });
+        else setFormData({ ...formData, [section]: { ...formData[section], [field]: value } });
+      };
+
+      const handleFileChange = (section, field, file) => {
+        setFormData({ ...formData, [section]: { ...formData[section], [field]: file } });
+      };
+
+      const addDependiente = () => setFormData({ ...formData, dependientes: [...formData.dependientes, { id: Date.now().toString(), nombres: '', apellidos: '', dob: '', parentesco: '', relacionOtro: '', ssnNumero: '', ssnDoc: null, tipoId: '', idDoc: null, esResidente: '', permisoDoc: null, actaNacimientoDoc: null }] });
+      const removeDependiente = (id) => setFormData({ ...formData, dependientes: formData.dependientes.filter(d => d.id !== id) });
+      const handleDependienteChange = (id, f, v) => setFormData({ ...formData, dependientes: formData.dependientes.map(d => d.id === id ? { ...d, [f]: v } : d) });
+      const handleDependienteFileChange = (id, f, file) => setFormData({ ...formData, dependientes: formData.dependientes.map(d => d.id === id ? { ...d, [f]: file } : d) });
+
+      const addIngreso = () => setFormData({ ...formData, ingresos: [...formData.ingresos, { id: Date.now().toString(), tipo: '', beneficiario: 'Titular', descripcion: '', documento: null, monto: '', anio: new Date().getFullYear().toString(), recibioEnBanco: '', aceptoDeclaracion: false }] });
+      const removeIngreso = (id) => setFormData({ ...formData, ingresos: formData.ingresos.filter(i => i.id !== id) });
+      const handleIngresoChange = (id, f, v) => setFormData({ ...formData, ingresos: formData.ingresos.map(i => i.id === id ? { ...i, [f]: v } : i) });
+      const handleIngresoFileChange = (id, f, file) => setFormData({ ...formData, ingresos: formData.ingresos.map(i => i.id === id ? { ...i, [f]: file } : i) });
+
+      const addSeguro = () => setFormData({ ...formData, seguros: [...formData.seguros, { id: Date.now().toString(), mercadoSalud: '', forma1095ADoc: null }] });
+      const removeSeguro = (id) => setFormData({ ...formData, seguros: formData.seguros.filter(s => s.id !== id) });
+      const handleSeguroChange = (id, f, v) => setFormData({ ...formData, seguros: formData.seguros.map(s => s.id === id ? { ...s, [f]: v } : s) });
+      const handleSeguroFileChange = (id, f, file) => setFormData({ ...formData, seguros: formData.seguros.map(s => s.id === id ? { ...s, [f]: file } : s) });
+
+      const addVehiculo = () => setFormData({ ...formData, vehiculos: [...formData.vehiculos, { id: Date.now().toString(), marca: '', modelo: '', anio: '', usoTrabajo: '', gastosMonto: '', gastosConceptos: '' }] });
+      const removeVehiculo = (id) => setFormData({ ...formData, vehiculos: formData.vehiculos.filter(v => v.id !== id) });
+      const handleVehiculoChange = (id, f, value) => setFormData({ ...formData, vehiculos: formData.vehiculos.map(veh => veh.id === id ? { ...veh, [f]: value } : veh) });
+
+      const addDocumentoAdicional = () => setFormData({ ...formData, documentosAdicionales: [...formData.documentosAdicionales, { id: Date.now().toString(), tipo: '', descripcion: '', archivo: null }] });
+      const removeDocumentoAdicional = (id) => setFormData({ ...formData, documentosAdicionales: formData.documentosAdicionales.filter(d => d.id !== id) });
+      const handleDocumentoAdicionalChange = (id, f, v) => setFormData({ ...formData, documentosAdicionales: formData.documentosAdicionales.map(d => d.id === id ? { ...d, [f]: v } : d) });
+      const handleDocumentoAdicionalFileChange = (id, f, file) => setFormData({ ...formData, documentosAdicionales: formData.documentosAdicionales.map(d => d.id === id ? { ...d, [f]: file } : d) });
+
+      const convertFileToBase64 = async (file) => {
+        if (!file) return null;
+        let fileToProcess = file;
+        if (file.type === 'image/heic' || file.name.toLowerCase().endsWith('.heic')) {
+          try {
+            const fileBlob = new Blob([file], { type: file.type || 'image/heic' });
+            const convertedBlob = await window.heic2any({ blob: fileBlob, toType: "image/jpeg", quality: 0.8 });
+            const blobToUse = Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob;
+            fileToProcess = new File([blobToUse], file.name.replace(/\.heic$/i, '.jpg'), { type: 'image/jpeg' });
+          } catch (error) {
+            setConversionWarnings(prev => (!prev.includes(file.name) ? [...prev, file.name] : prev));
+          }
+        }
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.readAsDataURL(fileToProcess);
+          reader.onload = () => resolve({ name: fileToProcess.name, mimeType: fileToProcess.type, base64: reader.result.split(',')[1] });
+          reader.onerror = error => reject(error);
+        });
+      };
+
+      const gatherAllFiles = async () => {
+        const filesArray = [];
+        const processFile = async (fileObj, prefix) => {
+          if (fileObj) {
+            const base64Data = await convertFileToBase64(fileObj);
+            if (base64Data) { base64Data.name = `${prefix}_${base64Data.name}`; filesArray.push(base64Data); }
+          }
+        };
+
+        // Titular
+        if (formData.titular.declaroAnterior === 'Si') await processFile(formData.titular.forma1040Doc, 'Titular_1040_Anterior');
+        await processFile(formData.titular.ssnDoc, 'Titular_SSN_ITIN');
+        await processFile(formData.titular.idDoc, `Titular_ID_${formData.titular.tipoId}`);
+        if (formData.titular.esResidente === 'No') await processFile(formData.titular.permisoDoc, 'Titular_Permiso_Trabajo');
+        
+        // Cónyuge
+        if (formData.titular.estadoCivil === 'Casado') {
+          await processFile(formData.conyuge.ssnDoc, 'Conyuge_SSN_ITIN');
+          await processFile(formData.conyuge.idDoc, `Conyuge_ID_${formData.conyuge.tipoId}`);
+          if (formData.conyuge.esResidente === 'No') await processFile(formData.conyuge.permisoDoc, 'Conyuge_Permiso_Trabajo');
+          await processFile(formData.conyuge.matrimonioDoc, 'Matrimonio');
+        }
+
+        // Seguros
+        for (let i = 0; i < formData.seguros.length; i++) {
+          if(formData.seguros[i].mercadoSalud === 'Si') await processFile(formData.seguros[i].forma1095ADoc, `Seguro_${i + 1}_1095A`);
+        }
+
+        // Dependientes
+        for (let i = 0; i < formData.dependientes.length; i++) {
+          const dep = formData.dependientes[i];
+          await processFile(dep.ssnDoc, `Dependiente_${i + 1}_SSN_ITIN`);
+          await processFile(dep.idDoc, `Dependiente_${i + 1}_ID_${dep.tipoId}`);
+          if(dep.esResidente === 'No') await processFile(dep.permisoDoc, `Dependiente_${i + 1}_Permiso_Trabajo`);
+          if(dep.parentesco === 'Hijo(a)') await processFile(dep.actaNacimientoDoc, `Dependiente_${i + 1}_Acta_Nacimiento`);
+        }
+
+        // Ingresos
+        for (let i = 0; i < formData.ingresos.length; i++) {
+          if (formData.ingresos[i].tipo !== 'Cash' && formData.ingresos[i].documento) {
+            await processFile(formData.ingresos[i].documento, `Ingreso_${i + 1}_${formData.ingresos[i].tipo}`);
+          }
+        }
+
+        // Documentos Adicionales
+        for (let i = 0; i < formData.documentosAdicionales.length; i++) {
+          if (formData.documentosAdicionales[i].archivo) {
+            const tipoLimpio = formData.documentosAdicionales[i].tipo ? formData.documentosAdicionales[i].tipo.replace(/\s+/g, '_') : 'Doc';
+            await processFile(formData.documentosAdicionales[i].archivo, `DocAdicional_${i + 1}_${tipoLimpio}`);
+          }
+        }
+        
+        return filesArray;
+      };
+
+      const handleSubmit = async (e) => {
+        e.preventDefault(); // Evita que la página se recargue
+
+        if (!hasFirma) {
+          alert("Por favor, firme la autorización al final del formulario antes de enviar.");
+          return;
+        }
+
+        setIsSubmitting(true);
+        setSubmitStatus(null);
+        setConversionWarnings([]); 
+
+        try {
+          const allFilesBase64 = await gatherAllFiles();
+          const firmaBase64 = canvasRef.current.toDataURL('image/png');
+          
+          const payload = {
+            formId, tipoDeclaracion: formData.tipoDeclaracion,
+            titular: formData.titular, conyuge: formData.conyuge, dependientes: formData.dependientes, 
+            ingresos: formData.ingresos, banco: formData.banco, seguros: formData.seguros, vehiculos: formData.vehiculos,
+            documentosAdicionales: formData.documentosAdicionales,
+            autorizacion: { ...formData.autorizacion, firmaDigital: firmaBase64 }, 
+            archivos: allFilesBase64 
+          };
+
+          const response = await fetch(WEB_APP_URL, {
+            method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(payload),
+          });
+          const result = await response.json();
+          
+          if (result.status === 'success') setSubmitStatus('success');
+          else throw new Error(result.message);
+
+        } catch (error) {
+          console.error("Error al enviar:", error);
+          setSubmitStatus('error');
+        } finally {
+          setIsSubmitting(false);
+        }
+      };
+
+      return (
+        <div className="min-h-screen bg-gray-100 p-4 md:p-8 font-sans flex flex-col items-center">
+          
+          <form onSubmit={handleSubmit} className="max-w-3xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden w-full">
+            
+            {/* CABECERA */}
+            <div className="bg-blue-600 p-6 text-white w-full">
+              <h1 className="text-2xl font-bold flex items-center"><i className="fa-solid fa-file-invoice-dollar mr-3"></i> Preparación de Impuestos</h1>
+              <p className="text-blue-100 mt-2 text-sm">Formulario de recopilación de datos y documentos.</p>
+              <div className="mt-4 inline-block bg-blue-700 px-3 py-1 rounded-full text-xs font-mono">ID Solicitud: {formId.toUpperCase()}</div>
+            </div>
+
+            <div className="p-6 md:p-8 w-full">
+              {/* TIPO DECLARACIÓN */}
+              <div className="mb-8 bg-blue-50 p-4 rounded-xl border border-blue-100 w-full">
+                <SelectField label="Tipo de Declaración a presentar" required={false} value={formData.tipoDeclaracion} onChange={(v) => handleInputChange('general', 'tipoDeclaracion', v)} options={[
+                  {value: 'Soltero', label: 'Soltero(a)'}, {value: 'Casado Conjunto', label: 'Casado(a) (conjunto)'},
+                  {value: 'Casado Separado', label: 'Casado(a) (separado)'}, {value: 'Cabeza Familia', label: 'Cabeza de familia'},
+                  {value: 'Viudo Calificado', label: 'Viudo(a) calificado(a)'}
+                ]} />
+              </div>
+
+              {/* SECCIÓN 1: TITULAR */}
+              <div className="mb-10 w-full overflow-hidden">
+                <h2 className="text-xl font-bold text-gray-800 border-b-2 border-gray-200 pb-2 mb-6 flex items-center"><i className="fa-solid fa-user mr-2 text-blue-500"></i>1. Datos del Declarante Principal</h2>
+                
+                <div className="mb-6 bg-blue-50/50 p-4 rounded-xl border border-blue-100">
+                  <SelectField label="¿Declaró impuestos el año pasado?" value={formData.titular.declaroAnterior} onChange={(v) => handleInputChange('titular', 'declaroAnterior', v)} options={[ {value: 'Si', label: 'Sí'}, {value: 'No', label: 'No'} ]} />
+                  {formData.titular.declaroAnterior === 'Si' && <div className="animate-fade-in"><FileUploadField label="Subir Forma 1040 anterior" section="titular" field="forma1040Doc" uniqueId="titular-1040" file={formData.titular.forma1040Doc} onChange={handleFileChange} /></div>}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 w-full">
+                  <InputField label="Nombres" icon="fa-solid fa-user" placeholder="Ej. Juan" value={formData.titular.nombres} onChange={(v) => handleInputChange('titular', 'nombres', v)} />
+                  <InputField label="Apellidos" icon="fa-solid fa-user" placeholder="Ej. Pérez" value={formData.titular.apellidos} onChange={(v) => handleInputChange('titular', 'apellidos', v)} />
+                  <InputField label="Fecha de Nacimiento" icon="fa-solid fa-calendar-alt" type="date" value={formData.titular.dob} onChange={(v) => handleInputChange('titular', 'dob', v)} />
+                  <InputField label="Teléfono" icon="fa-solid fa-phone" type="tel" placeholder="(123) 456-7890" value={formData.titular.telefono} onChange={(v) => handleInputChange('titular', 'telefono', v)} />
+                </div>
+                <InputField label="Dirección Completa" icon="fa-solid fa-map-marker-alt" placeholder="123 Main St, Apt 4, Orlando, FL 32801" value={formData.titular.direccion} onChange={(v) => handleInputChange('titular', 'direccion', v)} />
+                <InputField label="Correo Electrónico" icon="fa-solid fa-envelope" type="email" placeholder="correo@ejemplo.com" value={formData.titular.correo} onChange={(v) => handleInputChange('titular', 'correo', v)} />
+
+                <div className="mt-8 bg-gray-50 p-5 rounded-xl border border-gray-200 w-full">
+                  <h3 className="text-md font-bold text-gray-700 mb-4">Documentación de Identidad</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4 w-full">
+                    <InputField label="SSN o ITIN" icon="fa-solid fa-id-card" placeholder="XXX-XX-XXXX" value={formData.titular.ssnNumero} onChange={(v) => handleInputChange('titular', 'ssnNumero', v)} />
+                    <FileUploadField label="Foto/Documento del SSN o ITIN" section="titular" field="ssnDoc" file={formData.titular.ssnDoc} onChange={handleFileChange} />
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4 pt-4 border-t border-gray-200 w-full">
+                    <SelectField label="Documento de Identificación" value={formData.titular.tipoId} onChange={(v) => handleInputChange('titular', 'tipoId', v)} options={[ {value: 'Licencia', label: 'Licencia'}, {value: 'ID Estatal', label: 'ID Estatal'}, {value: 'Pasaporte', label: 'Pasaporte'} ]} />
+                    {formData.titular.tipoId && (
+                      <div className="animate-fade-in">
+                        <FileUploadField label={`Foto/Documento de ${formData.titular.tipoId}`} section="titular" field="idDoc" file={formData.titular.idDoc} onChange={handleFileChange} />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-gray-200 w-full">
+                    <SelectField label="¿Es el Declarante Ciudadano o Residente?" value={formData.titular.esResidente} onChange={(v) => handleInputChange('titular', 'esResidente', v)} options={[ {value: 'Si', label: 'Sí'}, {value: 'No', label: 'No'} ]} />
+                    {formData.titular.esResidente === 'No' && (
+                      <div className="animate-fade-in"><FileUploadField label="Foto/Documento de Permiso de Trabajo" section="titular" field="permisoDoc" file={formData.titular.permisoDoc} onChange={handleFileChange} /></div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-6 w-full">
+                  <SelectField label="Estado Civil Actual" value={formData.titular.estadoCivil} onChange={(v) => handleInputChange('titular', 'estadoCivil', v)} options={[
+                    {value: 'Soltero', label: 'Soltero(a)'}, {value: 'Casado', label: 'Casado(a)'}, {value: 'Divorciado', label: 'Divorciado(a)'}, {value: 'Viudo', label: 'Viudo(a)'}
+                  ]} />
+                </div>
+              </div>
+
+              {/* SECCIÓN 2: CÓNYUGE */}
+              {formData.titular.estadoCivil === 'Casado' && (
+                <div className="mb-10 animate-fade-in w-full overflow-hidden">
+                  <h2 className="text-xl font-bold text-gray-800 border-b-2 border-gray-200 pb-2 mb-6 flex items-center"><i className="fa-solid fa-user-group mr-2 text-pink-500"></i>2. Información del Cónyuge</h2>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 w-full">
+                    <InputField label="Nombres" icon="fa-solid fa-user" placeholder="Ej. María" value={formData.conyuge.nombres} onChange={(v) => handleInputChange('conyuge', 'nombres', v)} />
+                    <InputField label="Apellidos" icon="fa-solid fa-user" placeholder="Ej. Gómez" value={formData.conyuge.apellidos} onChange={(v) => handleInputChange('conyuge', 'apellidos', v)} />
+                    <InputField label="Fecha de Nacimiento" icon="fa-solid fa-calendar-alt" type="date" value={formData.conyuge.dob} onChange={(v) => handleInputChange('conyuge', 'dob', v)} />
+                    <InputField label="Teléfono" icon="fa-solid fa-phone" type="tel" placeholder="(123) 456-7890" value={formData.conyuge.telefono} onChange={(v) => handleInputChange('conyuge', 'telefono', v)} />
+                  </div>
+                  <InputField label="Dirección Completa" icon="fa-solid fa-map-marker-alt" placeholder="Misma dirección o indicar nueva" value={formData.conyuge.direccion} onChange={(v) => handleInputChange('conyuge', 'direccion', v)} />
+                  <InputField label="Correo Electrónico" icon="fa-solid fa-envelope" type="email" placeholder="correo@ejemplo.com" value={formData.conyuge.correo} onChange={(v) => handleInputChange('conyuge', 'correo', v)} />
+
+                  <div className="mt-8 bg-gray-50 p-5 rounded-xl border border-gray-200 w-full">
+                    <h3 className="text-md font-bold text-gray-700 mb-4">Documentación de Identidad (Cónyuge)</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4 w-full">
+                      <InputField label="SSN o ITIN (Cónyuge)" icon="fa-solid fa-id-card" placeholder="XXX-XX-XXXX" value={formData.conyuge.ssnNumero} onChange={(v) => handleInputChange('conyuge', 'ssnNumero', v)} />
+                      <FileUploadField label="Foto/Documento del SSN o ITIN" section="conyuge" field="ssnDoc" file={formData.conyuge.ssnDoc} onChange={handleFileChange} />
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4 pt-4 border-t border-gray-200 w-full">
+                      <SelectField label="Documento de Identificación" value={formData.conyuge.tipoId} onChange={(v) => handleInputChange('conyuge', 'tipoId', v)} options={[ {value: 'Licencia', label: 'Licencia'}, {value: 'ID Estatal', label: 'ID Estatal'}, {value: 'Pasaporte', label: 'Pasaporte'} ]} />
+                      {formData.conyuge.tipoId && (
+                        <div className="animate-fade-in">
+                          <FileUploadField label={`Foto/Documento de ${formData.conyuge.tipoId}`} section="conyuge" field="idDoc" file={formData.conyuge.idDoc} onChange={handleFileChange} />
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-gray-200 w-full">
+                      <SelectField label="¿Es el Cónyuge Ciudadano o Residente?" value={formData.conyuge.esResidente} onChange={(v) => handleInputChange('conyuge', 'esResidente', v)} options={[ {value: 'Si', label: 'Sí'}, {value: 'No', label: 'No'} ]} />
+                      {formData.conyuge.esResidente === 'No' && (
+                        <div className="animate-fade-in"><FileUploadField label="Foto/Documento de Permiso de Trabajo" section="conyuge" field="permisoDoc" file={formData.conyuge.permisoDoc} onChange={handleFileChange} /></div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="mt-6 bg-pink-50 p-5 rounded-xl border border-pink-100 animate-fade-in w-full">
+                    <FileUploadField label="Foto/Documento de Matrimonio" section="conyuge" field="matrimonioDoc" file={formData.conyuge.matrimonioDoc} onChange={handleFileChange} />
+                  </div>
+                </div>
+              )}
+
+              {/* SECCIÓN 3: DEPENDIENTES */}
+              <div className="mb-10 w-full">
+                <div className="flex flex-col md:flex-row justify-between md:items-center border-b-2 border-gray-200 pb-2 mb-6 gap-y-3">
+                  <h2 className="text-xl font-bold text-gray-800 flex items-center"><i className="fa-solid fa-children mr-2 text-indigo-500"></i>3. Dependientes</h2>
+                  <button type="button" onClick={addDependiente} className="flex items-center justify-center text-sm bg-indigo-100 text-indigo-700 font-bold py-2 px-4 rounded-lg hover:bg-indigo-200">
+                    <i className="fa-solid fa-plus-circle mr-2"></i> Agregar
+                  </button>
+                </div>
+                {formData.dependientes.length === 0 ? (
+                  <div className="text-center py-8 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300 w-full">
+                    <i className="fa-solid fa-children text-4xl text-gray-300 mb-3 block"></i>
+                    <p className="text-gray-500 text-sm px-4">No ha agregado ningún dependiente.<br/>Haga clic en <strong>"Agregar"</strong> para incluir hijos u otros familiares.</p>
+                  </div>
+                ) : (
+                  formData.dependientes.map((dep, index) => (
+                    <div key={dep.id} className="bg-white p-5 rounded-xl border border-indigo-200 shadow-sm mb-6 relative animate-fade-in w-full">
+                      <button type="button" onClick={() => removeDependiente(dep.id)} className="absolute top-4 right-4 text-red-400 hover:text-red-600 bg-red-50 p-1.5 rounded-md" title="Eliminar"><i className="fa-solid fa-trash-alt"></i></button>
+                      <h3 className="font-bold text-indigo-900 mb-4 border-b border-indigo-50 pb-2 pr-10">Dependiente #{index + 1}</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 w-full">
+                        <InputField label="Nombres" icon="fa-solid fa-user" placeholder="Ej. Carlos" value={dep.nombres} onChange={(v) => handleDependienteChange(dep.id, 'nombres', v)} />
+                        <InputField label="Apellidos" icon="fa-solid fa-user" placeholder="Ej. Pérez" value={dep.apellidos} onChange={(v) => handleDependienteChange(dep.id, 'apellidos', v)} />
+                        <InputField label="Fecha de Nacimiento" icon="fa-solid fa-calendar-alt" type="date" value={dep.dob} onChange={(v) => handleDependienteChange(dep.id, 'dob', v)} />
+                        
+                        <SelectField label="Parentesco" value={dep.parentesco} onChange={(v) => handleDependienteChange(dep.id, 'parentesco', v)} options={[
+                          {value: 'Hijo(a)', label: 'Hijo(a)'}, {value: 'Hijastro(a)', label: 'Hijastro(a)'}, {value: 'Hermano(a)', label: 'Hermano(a)'}, {value: 'Padre/Madre', label: 'Padre / Madre'}, {value: 'Otro', label: 'Otro'}
+                        ]} />
+                        {dep.parentesco === 'Otro' && <div className="md:col-span-2 animate-fade-in"><InputField label="Relación con el Declarante" icon="fa-solid fa-users" value={dep.relacionOtro} onChange={(v) => handleDependienteChange(dep.id, 'relacionOtro', v)} /></div>}
+                        {dep.parentesco === 'Hijo(a)' && <div className="md:col-span-2 animate-fade-in"><FileUploadField label="Foto/Documento del Acta de Nacimiento" section="dep" field="actaNacimientoDoc" uniqueId={`dep-${dep.id}-acta`} file={dep.actaNacimientoDoc} onChange={(s, f, file) => handleDependienteFileChange(dep.id, 'actaNacimientoDoc', file)} /></div>}
+                      </div>
+
+                      <div className="mt-4 pt-4 border-t border-indigo-100 w-full">
+                        <h4 className="text-sm font-bold text-indigo-900 mb-4">Documentación de Identidad</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4 w-full">
+                          <InputField label="SSN o ITIN" icon="fa-solid fa-id-card" placeholder="XXX-XX-XXXX" value={dep.ssnNumero} onChange={(v) => handleDependienteChange(dep.id, 'ssnNumero', v)} />
+                          <FileUploadField label="Foto/Documento del SSN o ITIN" section="dep" field="ssnDoc" uniqueId={`dep-${dep.id}-ssn`} file={dep.ssnDoc} onChange={(s, f, file) => handleDependienteFileChange(dep.id, 'ssnDoc', file)} />
+                        </div>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4 pt-4 border-t border-indigo-100 w-full">
+                          <SelectField label="Documento de Identificación" value={dep.tipoId} onChange={(v) => handleDependienteChange(dep.id, 'tipoId', v)} options={[ {value: 'Licencia', label: 'Licencia'}, {value: 'ID Estatal', label: 'ID Estatal'}, {value: 'Pasaporte', label: 'Pasaporte'} ]} />
+                          {dep.tipoId && (
+                            <div className="animate-fade-in">
+                              <FileUploadField label={`Foto/Documento de ${dep.tipoId}`} section="dep" field="idDoc" uniqueId={`dep-${dep.id}-idDoc`} file={dep.idDoc} onChange={(s, f, file) => handleDependienteFileChange(dep.id, 'idDoc', file)} />
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-indigo-100 w-full">
+                          <SelectField label="¿Es el Dependiente Ciudadano o Residente?" value={dep.esResidente} onChange={(v) => handleDependienteChange(dep.id, 'esResidente', v)} options={[ {value: 'Si', label: 'Sí'}, {value: 'No', label: 'No'} ]} />
+                          {dep.esResidente === 'No' && (
+                            <div className="animate-fade-in"><FileUploadField label="Foto/Documento de Permiso de Trabajo" section="dep" field="permisoDoc" uniqueId={`dep-${dep.id}-permiso`} file={dep.permisoDoc} onChange={(s, f, file) => handleDependienteFileChange(dep.id, 'permisoDoc', file)} /></div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* SECCIÓN 4: INGRESOS */}
+              <div className="mb-10 w-full">
+                <div className="flex flex-col md:flex-row justify-between md:items-center border-b-2 border-gray-200 pb-2 mb-6 gap-y-3">
+                  <h2 className="text-xl font-bold text-gray-800 flex items-center"><i className="fa-solid fa-file-invoice-dollar mr-2 text-green-600"></i>4. Ingresos</h2>
+                  <button type="button" onClick={addIngreso} className="flex items-center justify-center text-sm bg-green-100 text-green-700 font-bold py-2 px-4 rounded-lg hover:bg-green-200">
+                    <i className="fa-solid fa-plus-circle mr-2"></i> Agregar
+                  </button>
+                </div>
+                {formData.ingresos.length === 0 ? (
+                  <div className="text-center py-8 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300 w-full">
+                    <i className="fa-solid fa-file-invoice-dollar text-4xl text-gray-300 mb-3 block"></i>
+                    <p className="text-gray-500 text-sm px-4">No ha registrado ningún ingreso.<br/>Haga clic en <strong>"Agregar"</strong> para detallar formas W-2, 1099 o pagos en efectivo.</p>
+                  </div>
+                ) : (
+                  formData.ingresos.map((ing, index) => {
+                    let nom = (ing.beneficiario === 'Titular') ? `${formData.titular.nombres} ${formData.titular.apellidos}` : `${formData.conyuge.nombres} ${formData.conyuge.apellidos}`;
+                    return (
+                    <div key={ing.id} className="bg-white p-5 rounded-xl border border-green-200 shadow-sm mb-6 relative animate-fade-in w-full">
+                      <button type="button" onClick={() => removeIngreso(ing.id)} className="absolute top-4 right-4 text-red-400 hover:text-red-600 bg-red-50 p-1.5 rounded-md" title="Eliminar"><i className="fa-solid fa-trash-alt"></i></button>
+                      <h3 className="font-bold text-green-900 mb-4 border-b border-green-50 pb-2 pr-10">Ingreso #{index + 1}</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 w-full">
+                        
+                        <SelectField label="Tipo de Ingreso" value={ing.tipo} onChange={(v) => handleIngresoChange(ing.id, 'tipo', v)} options={[
+                          {value: 'W-2', label: 'W-2'}, {value: '1099', label: '1099'}, {value: 'Cash', label: 'Cash'}, {value: 'Otro', label: 'Otro'}
+                        ]} />
+                        
+                        <div className="flex flex-col space-y-1.5 mb-4 min-w-0">
+                          <label className="text-sm font-semibold text-gray-700 truncate">Beneficiario <span className="text-red-500">*</span></label>
+                          <select required className="w-full min-h-[46px] p-2.5 border border-gray-300 rounded-lg outline-none bg-white appearance-none" value={ing.beneficiario} onChange={(e) => handleIngresoChange(ing.id, 'beneficiario', e.target.value)}>
+                            <option value="Titular">Titular</option>
+                            {formData.titular.estadoCivil === 'Casado' && <option value="Cónyuge">Cónyuge</option>}
+                          </select>
+                        </div>
+
+                        <div className="md:col-span-2"><InputField label="Descripción / Oficio" icon="fa-solid fa-file-alt" placeholder="Ej. Delivery, Uber, Construcción..." value={ing.descripcion} onChange={(v) => handleIngresoChange(ing.id, 'descripcion', v)} /></div>
+                        
+                        {ing.tipo === 'Cash' ? (
+                          <div className="md:col-span-2 mt-2 bg-yellow-50 p-5 rounded-xl border border-yellow-200 w-full">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                              <InputField label="Monto ($)" type="number" placeholder="Ej. 15000" value={ing.monto} onChange={(v) => handleIngresoChange(ing.id, 'monto', v)} />
+                              <InputField label="Año" type="number" placeholder="Ej. 2025" value={ing.anio} onChange={(v) => handleIngresoChange(ing.id, 'anio', v)} />
+                            </div>
+                            <div className="mb-4">
+                              <SelectField label="¿Recibió el dinero en su cuenta bancaria?" value={ing.recibioEnBanco} onChange={(v) => handleIngresoChange(ing.id, 'recibioEnBanco', v)} options={[ {value: 'Si', label: 'Sí'}, {value: 'No', label: 'No'} ]} />
+                            </div>
+                            <div className="bg-white p-4 rounded-lg border border-yellow-300 text-sm text-gray-700 italic shadow-sm">
+                              "Yo, <strong>{nom}</strong>, declaro haber recibido <strong>${ing.monto || '0'}</strong> en <strong>{ing.anio || '____'}</strong> por <strong>{ing.descripcion || '_____'}</strong> cobrados en efectivo."
+                            </div>
+                            <label className="flex items-start mt-4 cursor-pointer p-2 bg-white rounded border border-gray-200 hover:bg-gray-50">
+                              <input type="checkbox" required className="w-5 h-5 mr-3 mt-0.5 rounded border-gray-300 text-green-600 flex-shrink-0" checked={ing.aceptoDeclaracion} onChange={(e) => handleIngresoChange(ing.id, 'aceptoDeclaracion', e.target.checked)} />
+                              <span className="text-sm font-bold text-gray-800">Confirmo que la información suministrada es verdadera y firmo digitalmente. <span className="text-red-500">*</span></span>
+                            </label>
+                          </div>
+                        ) : ing.tipo !== '' ? (
+                          <div className="md:col-span-2 mt-2 pt-4 border-t border-green-100"><FileUploadField label={`Forma ${ing.tipo}`} section="ingreso" field="documento" uniqueId={`ing-doc-${ing.id}`} file={ing.documento} onChange={(s, f, file) => handleIngresoFileChange(ing.id, 'documento', file)} /></div>
+                        ) : null}
+                      </div>
+                    </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* SECCIÓN 5: BANCO */}
+              <div className="mb-10 w-full">
+                <h2 className="text-xl font-bold text-gray-800 border-b-2 border-gray-200 pb-2 mb-6 flex items-center"><i className="fa-solid fa-university mr-2 text-purple-600"></i>5. Banco</h2>
+                <div className="bg-purple-50 p-5 rounded-xl border border-purple-100 mb-6 w-full">
+                  <div className="mb-4">
+                    <InputField label="Titular de la Cuenta" icon="fa-solid fa-user" placeholder="Ej. Juan Pérez" value={formData.banco.titularCuenta} onChange={(v) => handleInputChange('banco', 'titularCuenta', v)} />
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 w-full">
+                    <InputField label="Nombre Banco" icon="fa-solid fa-university" placeholder="Ej. Bank of America" value={formData.banco.nombre} onChange={(v) => handleInputChange('banco', 'nombre', v)} />
+                    <SelectField label="Tipo de Cuenta" value={formData.banco.tipo} onChange={(v) => handleInputChange('banco', 'tipo', v)} options={[ {value: 'Checking', label: 'Checking'}, {value: 'Savings', label: 'Savings'} ]} />
+                    <InputField label="Ruta (Routing)" icon="fa-solid fa-credit-card" type="number" placeholder="Ej. 123456789" value={formData.banco.ruta} onChange={(v) => handleInputChange('banco', 'ruta', v)} />
+                    <InputField label="Cuenta (Account)" icon="fa-solid fa-credit-card" type="number" placeholder="Ej. 987654321" value={formData.banco.cuenta} onChange={(v) => handleInputChange('banco', 'cuenta', v)} />
+                  </div>
+                </div>
+              </div>
+
+              {/* SECCIÓN 6: SEGURO MÉDICO */}
+              <div className="mb-10 w-full">
+                <div className="flex flex-col md:flex-row justify-between md:items-center border-b-2 border-gray-200 pb-2 mb-6 gap-y-3">
+                  <h2 className="text-xl font-bold text-gray-800 flex items-center"><i className="fa-solid fa-shield-alt mr-2 text-red-500"></i>6. Seguro Médico</h2>
+                  <button type="button" onClick={addSeguro} className="flex items-center justify-center text-sm bg-red-100 text-red-700 font-bold py-2 px-4 rounded-lg hover:bg-red-200">
+                    <i className="fa-solid fa-plus-circle mr-2"></i> Agregar Póliza
+                  </button>
+                </div>
+                {formData.seguros.length === 0 ? (
+                  <div className="text-center py-8 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300 w-full">
+                    <i className="fa-solid fa-shield-heart text-4xl text-gray-300 mb-3 block"></i>
+                    <p className="text-gray-500 text-sm px-4">No ha agregado ningún seguro médico.<br/>Haga clic en <strong>"Agregar Póliza"</strong> para incluir planes del mercado de salud.</p>
+                  </div>
+                ) : (
+                  formData.seguros.map((seg, index) => (
+                    <div key={seg.id} className="bg-red-50/50 p-5 rounded-xl border border-red-100 mb-6 relative animate-fade-in w-full">
+                      <button type="button" onClick={() => removeSeguro(seg.id)} className="absolute top-4 right-4 text-red-400 hover:text-red-600 bg-red-50 p-1.5 rounded-md" title="Eliminar"><i className="fa-solid fa-trash-alt"></i></button>
+                      <h3 className="font-bold text-red-900 mb-4 border-b border-red-100 pb-2 pr-10">Póliza #{index + 1}</h3>
+                      <SelectField label="¿Tuvo Obamacare / Mercado de Salud?" value={seg.mercadoSalud} onChange={(v) => handleSeguroChange(seg.id, 'mercadoSalud', v)} options={[ {value: 'Si', label: 'Sí'}, {value: 'No', label: 'No'} ]} />
+                      {seg.mercadoSalud === 'Si' && <FileUploadField label="Subir 1095-A" section="seguro" field="forma1095ADoc" uniqueId={`seguro-1095A-${seg.id}`} file={seg.forma1095ADoc} onChange={(s, f, file) => handleSeguroFileChange(seg.id, 'forma1095ADoc', file)} />}
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* SECCIÓN 7: VEHÍCULOS */}
+              <div className="mb-10 w-full">
+                <div className="flex flex-col md:flex-row justify-between md:items-center border-b-2 border-gray-200 pb-2 mb-6 gap-y-3">
+                  <h2 className="text-xl font-bold text-gray-800 flex items-center"><i className="fa-solid fa-car mr-2 text-orange-500"></i>7. Vehículos de Trabajo</h2>
+                  <button type="button" onClick={addVehiculo} className="flex items-center justify-center text-sm bg-orange-100 text-orange-700 font-bold py-2 px-4 rounded-lg hover:bg-orange-200">
+                    <i className="fa-solid fa-plus-circle mr-2"></i> Agregar Vehículo
+                  </button>
+                </div>
+                {formData.vehiculos.length === 0 ? (
+                  <div className="text-center py-8 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300 w-full">
+                    <i className="fa-solid fa-car text-4xl text-gray-300 mb-3 block"></i>
+                    <p className="text-gray-500 text-sm px-4">No ha registrado vehículos.<br/>Haga clic en <strong>"Agregar Vehículo"</strong> si utilizó alguno como herramienta de trabajo.</p>
+                  </div>
+                ) : (
+                  formData.vehiculos.map((veh, index) => (
+                    <div key={veh.id} className="bg-orange-50/50 p-5 rounded-xl border border-orange-100 mb-6 relative animate-fade-in w-full">
+                      <button type="button" onClick={() => removeVehiculo(veh.id)} className="absolute top-4 right-4 text-red-400 hover:text-red-600 bg-red-50 p-1.5 rounded-md" title="Eliminar"><i className="fa-solid fa-trash-alt"></i></button>
+                      <h3 className="font-bold text-orange-900 mb-4 border-b border-orange-100 pb-2 pr-10">Vehículo #{index + 1}</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-2 w-full">
+                        <InputField label="Marca" icon="fa-solid fa-car" placeholder="Ej. Toyota" value={veh.marca} onChange={(v) => handleVehiculoChange(veh.id, 'marca', v)} />
+                        <InputField label="Modelo" icon="fa-solid fa-car" placeholder="Ej. Corolla" value={veh.modelo} onChange={(v) => handleVehiculoChange(veh.id, 'modelo', v)} />
+                        <InputField label="Año" icon="fa-solid fa-calendar-alt" type="number" placeholder="Ej. 2018" value={veh.anio} onChange={(v) => handleVehiculoChange(veh.id, 'anio', v)} />
+                      </div>
+                      
+                      <SelectField label="¿Lo usó para trabajo?" value={veh.usoTrabajo} onChange={(v) => handleVehiculoChange(veh.id, 'usoTrabajo', v)} options={[ {value: 'Si', label: 'Sí'}, {value: 'No', label: 'No'} ]} />
+                      
+                      {veh.usoTrabajo === 'Si' && (
+                        <div className="animate-fade-in bg-white p-4 rounded-xl border border-orange-200 mt-2">
+                          <InputField label="Gastos Totales ($)" icon="fa-solid fa-file-invoice-dollar" type="number" placeholder="Ej. 4500" value={veh.gastosMonto} onChange={(v) => handleVehiculoChange(veh.id, 'gastosMonto', v)} />
+                          <TextAreaField label="Desglose (Gasolina, seguro...)" icon="fa-solid fa-list-ul" placeholder="Ej. Gasolina: $2,500, Seguro: $1,200, Aceite: $200..." value={veh.gastosConceptos} onChange={(v) => handleVehiculoChange(veh.id, 'gastosConceptos', v)} />
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* SECCIÓN 8: DOCUMENTACIÓN ADICIONAL */}
+              <div className="mb-10 w-full">
+                <div className="flex flex-col md:flex-row justify-between md:items-center border-b-2 border-gray-200 pb-2 mb-6 gap-y-3">
+                  <h2 className="text-xl font-bold text-gray-800 flex items-center"><i className="fa-solid fa-folder-plus mr-2 text-teal-500"></i>8. Documentación Adicional</h2>
+                  <button type="button" onClick={addDocumentoAdicional} className="flex items-center justify-center text-sm bg-teal-100 text-teal-700 font-bold py-2 px-4 rounded-lg hover:bg-teal-200">
+                    <i className="fa-solid fa-plus-circle mr-2"></i> Agregar Documento
+                  </button>
+                </div>
+                {formData.documentosAdicionales.length === 0 ? (
+                  <div className="text-center py-8 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300 w-full">
+                    <i className="fa-solid fa-folder-open text-4xl text-gray-300 mb-3 block"></i>
+                    <p className="text-gray-500 text-sm px-4">
+                      No ha agregado documentación adicional.<br/>
+                      Haga clic en <strong>"Agregar Documento"</strong> para incluir:<br/>
+                      <span className="text-xs mt-2 block text-gray-400">
+                        • Gastos de Guardería (Recibos / Forma W-10)<br/>
+                        • Estudios Universitarios (Forma 1098-T)<br/>
+                        • Intereses Hipotecarios (Forma 1098)<br/>
+                        • Retiros de 401K<br/>
+                        • Cualquier otra información relevante
+                      </span>
+                    </p>
+                  </div>
+                ) : (
+                  formData.documentosAdicionales.map((doc, index) => (
+                    <div key={doc.id} className="bg-teal-50/50 p-5 rounded-xl border border-teal-100 mb-6 relative animate-fade-in w-full">
+                      <button type="button" onClick={() => removeDocumentoAdicional(doc.id)} className="absolute top-4 right-4 text-red-400 hover:text-red-600 bg-red-50 p-1.5 rounded-md" title="Eliminar"><i className="fa-solid fa-trash-alt"></i></button>
+                      <h3 className="font-bold text-teal-900 mb-4 border-b border-teal-100 pb-2 pr-10">Documento #{index + 1}</h3>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 w-full">
+                        <SelectField label="Tipo de Documento" value={doc.tipo} onChange={(v) => handleDocumentoAdicionalChange(doc.id, 'tipo', v)} options={[
+                          {value: 'Guarderia', label: 'Gastos de Guardería'},
+                          {value: '1098-T', label: 'Estudios (Forma 1098-T)'},
+                          {value: '1098', label: 'Hipoteca (Forma 1098)'},
+                          {value: '401K', label: 'Retiros 401K'},
+                          {value: 'Otro', label: 'Otro Documento'}
+                        ]} />
+                        <InputField label="Breve Descripción (Opcional)" icon="fa-solid fa-pen" placeholder="Ej. Recibos Daycare" value={doc.descripcion} onChange={(v) => handleDocumentoAdicionalChange(doc.id, 'descripcion', v)} required={false} />
+                      </div>
+                      
+                      <div className="mt-2 pt-4 border-t border-teal-200">
+                        <FileUploadField label="Capturar/Subir Documento" section="docAdicional" field="archivo" uniqueId={`docAdicional-${doc.id}`} file={doc.archivo} onChange={(s, f, file) => handleDocumentoAdicionalFileChange(doc.id, 'archivo', file)} />
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* SECCIÓN 9: FIRMA DIGITAL */}
+              <div className="mb-10 w-full border-2 border-blue-600 rounded-2xl overflow-hidden shadow-lg">
+                <div className="bg-blue-600 p-4 text-white flex items-center">
+                  <i className="fa-solid fa-pen-nib mr-3 text-xl"></i>
+                  <h2 className="text-xl font-bold">9. Autorización y Firma</h2>
+                </div>
+                <div className="p-5 bg-white">
+                  <div className="mb-6 bg-blue-50 p-4 rounded-lg text-sm text-gray-800 leading-relaxed border border-blue-100 text-justify">
+                    <p className="mb-4">Por la presente, autorizo expresamente a mi preparador a utilizar esta información a los fines exclusivos de procesar mi declaración del periodo fiscal abajo especificado.</p>
+                    <div className="flex items-center space-x-3 bg-white p-3 rounded border border-gray-300 w-full md:w-1/2">
+                      <label className="font-bold text-gray-700 whitespace-nowrap">Año Tributario:</label>
+                      <input type="number" required className="w-full text-blue-700 font-bold outline-none bg-transparent" value={formData.autorizacion.anioTributario} onChange={(e) => handleInputChange('autorizacion', 'anioTributario', e.target.value)} />
+                    </div>
+                  </div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">Firme aquí: <span className="text-red-500">*</span></label>
+                  <div className="relative border-2 border-dashed border-gray-300 rounded-xl bg-gray-50 overflow-hidden touch-none" style={{ height: '200px' }}>
+                    <canvas ref={canvasRef} width={800} height={400} className="w-full h-full cursor-crosshair touch-none" onMouseDown={startDrawing} onMouseMove={draw} onMouseUp={stopDrawing} onMouseLeave={stopDrawing}></canvas>
+                    {!hasFirma && <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-50 text-gray-400 font-medium">Firme con su dedo o mouse</div>}
+                    <button type="button" onClick={clearSignature} className="absolute bottom-3 right-3 bg-white border border-gray-300 text-gray-600 p-2 rounded-lg shadow-sm hover:bg-gray-100 flex items-center text-xs font-bold"><i className="fa-solid fa-eraser mr-1"></i> Limpiar</button>
+                  </div>
+                </div>
+              </div>
+
+              {/* ESTADO DE ENVÍO */}
+              {conversionWarnings.length > 0 && (
+                <div className="mb-6 p-4 bg-yellow-50 text-yellow-800 rounded-lg flex items-start"><i className="fa-solid fa-exclamation-triangle mr-3 mt-1 text-yellow-500 text-xl"></i><div className="text-sm">Archivos HEIC enviados en formato original.</div></div>
+              )}
+              {submitStatus === 'success' && (
+                <div className="mb-6 p-4 bg-green-100 text-green-800 rounded-lg flex items-center"><i className="fa-solid fa-check-circle mr-3 text-2xl"></i><div><strong>¡Éxito!</strong> Formulario enviado correctamente.</div></div>
+              )}
+              {submitStatus === 'error' && (
+                <div className="mb-6 p-4 bg-red-100 text-red-800 rounded-lg"><i className="fa-solid fa-times-circle mr-3"></i><strong>Error:</strong> Problema de conexión.</div>
+              )}
+
+              <div className="border-t pt-6 flex justify-end w-full">
+                <button type="submit" disabled={isSubmitting} className={`flex items-center justify-center font-bold py-4 px-8 rounded-xl shadow-lg transition-colors w-full text-white text-lg ${isSubmitting ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}>
+                  {isSubmitting ? <><i className="fa-solid fa-spinner fa-spin mr-3 text-xl"></i> Procesando...</> : "Firmar y Enviar Formulario"}
+                </button>
+              </div>
+              
+            </div>
+          </form>
+
+          {/* === FOOTER LEGAL === */}
+          <footer className="max-w-3xl mx-auto mt-6 mb-4 text-center text-gray-500 text-xs px-4">
+            <p className="font-semibold text-gray-600 mb-1">
+              &copy; {new Date().getFullYear()} [Nombre de tu Empresa]. Todos los derechos reservados.
+            </p>
+            <p>
+              Este documento y la información adjunta son estrictamente confidenciales y están protegidos por la ley. 
+              Los datos recopilados en este formulario se utilizarán de manera segura y exclusiva para los fines de preparación, evaluación y presentación de su declaración de impuestos aplicable.
+            </p>
+          </footer>
+
+        </div>
+      );
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>

@@ -236,9 +236,12 @@
       const handleDocumentoAdicionalChange = (id, f, v) => setFormData({ ...formData, documentosAdicionales: formData.documentosAdicionales.map(d => d.id === id ? { ...d, [f]: v } : d) });
       const handleDocumentoAdicionalFileChange = (id, f, file) => setFormData({ ...formData, documentosAdicionales: formData.documentosAdicionales.map(d => d.id === id ? { ...d, [f]: file } : d) });
 
+      // === SISTEMA DE COMPRESIÓN DE IMÁGENES ===
       const convertFileToBase64 = async (file) => {
         if (!file) return null;
         let fileToProcess = file;
+        
+        // 1. Convertir HEIC a JPEG si es necesario
         if (file.type === 'image/heic' || file.name.toLowerCase().endsWith('.heic')) {
           try {
             const fileBlob = new Blob([file], { type: file.type || 'image/heic' });
@@ -246,14 +249,76 @@
             const blobToUse = Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob;
             fileToProcess = new File([blobToUse], file.name.replace(/\.heic$/i, '.jpg'), { type: 'image/jpeg' });
           } catch (error) {
+            console.warn("Advertencia de HEIC:", error);
             setConversionWarnings(prev => (!prev.includes(file.name) ? [...prev, file.name] : prev));
           }
         }
+
         return new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.readAsDataURL(fileToProcess);
-          reader.onload = () => resolve({ name: fileToProcess.name, mimeType: fileToProcess.type, base64: reader.result.split(',')[1] });
-          reader.onerror = error => reject(error);
+          // 2. Si es una IMAGEN, la comprimimos antes de enviarla
+          if (fileToProcess.type.startsWith('image/')) {
+            const reader = new FileReader();
+            reader.readAsDataURL(fileToProcess);
+            reader.onload = (event) => {
+              const img = new Image();
+              img.src = event.target.result;
+              img.onload = () => {
+                // Crear un canvas para redimensionar y comprimir
+                const canvas = document.createElement('canvas');
+                // Máximas dimensiones (HD)
+                const MAX_WIDTH = 1600; 
+                const MAX_HEIGHT = 1600;
+                let width = img.width;
+                let height = img.height;
+
+                // Calcular nueva proporción manteniendo el aspecto
+                if (width > height) {
+                  if (width > MAX_WIDTH) {
+                    height = Math.round(height *= MAX_WIDTH / width);
+                    width = MAX_WIDTH;
+                  }
+                } else {
+                  if (height > MAX_HEIGHT) {
+                    width = Math.round(width *= MAX_HEIGHT / height);
+                    height = MAX_HEIGHT;
+                  }
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+
+                // Exportar a Base64 con 70% de calidad JPEG (Ideal para documentos)
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+                const base64Data = dataUrl.split(',')[1];
+                
+                // Asegurarnos que el nombre termine en .jpg
+                let finalName = fileToProcess.name;
+                if(!finalName.toLowerCase().endsWith('.jpg') && !finalName.toLowerCase().endsWith('.jpeg')) {
+                   finalName = finalName.replace(/\.[^/.]+$/, "") + ".jpg";
+                }
+
+                resolve({ 
+                  name: finalName, 
+                  mimeType: 'image/jpeg', 
+                  base64: base64Data 
+                });
+              };
+              img.onerror = (err) => reject(err);
+            };
+            reader.onerror = (err) => reject(err);
+          } else {
+            // 3. Si NO es imagen (Ej: PDF), no se comprime, pasa directo.
+            const reader = new FileReader();
+            reader.readAsDataURL(fileToProcess);
+            reader.onload = () => resolve({ 
+              name: fileToProcess.name, 
+              mimeType: fileToProcess.type, 
+              base64: reader.result.split(',')[1] 
+            });
+            reader.onerror = error => reject(error);
+          }
         });
       };
 

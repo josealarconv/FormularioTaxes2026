@@ -34,8 +34,22 @@
   <script type="text/babel">
     const { useState, useEffect, useRef } = React;
 
+    // --- FORMATEADORES DE TEXTO ---
+    const formatSSN = (val) => {
+      if (!val) return val;
+      const onlyNums = val.replace(/[^\d]/g, '');
+      if (onlyNums.length <= 3) return onlyNums;
+      if (onlyNums.length <= 5) return `${onlyNums.slice(0, 3)}-${onlyNums.slice(3)}`;
+      return `${onlyNums.slice(0, 3)}-${onlyNums.slice(3, 5)}-${onlyNums.slice(5, 9)}`;
+    };
+
+    const formatRouting = (val) => {
+      if (!val) return val;
+      return val.replace(/[^\d]/g, '').slice(0, 9);
+    };
+
     // --- COMPONENTES UI REUTILIZABLES ---
-    const InputField = ({ label, icon, type = "text", placeholder, value, onChange, required = true }) => {
+    const InputField = ({ label, icon, type = "text", placeholder, value, onChange, required = true, minLength, maxLength }) => {
       const isDate = type === 'date';
       const isEmptyDate = isDate && !value;
       return (
@@ -47,6 +61,8 @@
             <input 
               type={type} 
               required={required}
+              minLength={minLength}
+              maxLength={maxLength}
               className={`w-full min-h-[46px] bg-white appearance-none p-2.5 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all ${icon ? 'pl-10' : 'pl-3'} ${isEmptyDate ? 'text-transparent' : 'text-gray-800'}`} 
               placeholder={placeholder} 
               value={value} 
@@ -86,7 +102,7 @@
     const FileUploadField = ({ label, section, field, uniqueId, file, onChange, required = true }) => {
       const inputId = uniqueId || `${section}-${field}`;
       return (
-        <div className="flex flex-col space-y-1.5 mb-4 min-w-0">
+        <div className="flex flex-col space-y-1.5 mb-4 min-w-0 animate-fade-in">
           <label className="text-sm font-semibold text-gray-700 truncate">{label} {required && <span className="text-red-500">*</span>}</label>
           <div className="relative w-full">
             {/* Input oculto pero validable por HTML5 */}
@@ -105,12 +121,13 @@
 
     const App = () => {
       // === CONFIGURACIÓN ===
-      const WEB_APP_URL = "https://script.google.com/macros/s/AKfycby3fRlL2s8qMNJk4UEh8gqnNcNWM4rQPr8dMyKHWgWUFs7pZkpTfAseBLlqGU5UUfQksw/exec"; 
+      const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzJZaEL07D74Yo4PdcjRwqhG2GMlK_YAo9Or7kV7If8zuOvjlOlQf2MsW4WyeJ-9QEqlw/exec"; 
       
       const [formId, setFormId] = useState('');
       const [isSubmitting, setIsSubmitting] = useState(false);
       const [submitStatus, setSubmitStatus] = useState(null);
       const [conversionWarnings, setConversionWarnings] = useState([]); 
+      const [formError, setFormError] = useState(""); // Estado para errores de validación visuales
       
       // FIRMA DIGITAL
       const canvasRef = useRef(null);
@@ -126,7 +143,7 @@
         },
         conyuge: {
           nombres: '', apellidos: '', dob: '', direccion: '', telefono: '', correo: '',
-          ssnNumero: '', ssnDoc: null, tipoId: '', idDoc: null, esResidente: '', permisoDoc: null, matrimonioDoc: null
+          ssnNumero: '', ssnDoc: null, tipoId: '', idDoc: null, esResidente: '', permisoDoc: null
         },
         dependientes: [], 
         ingresos: [],
@@ -191,6 +208,7 @@
         ctx.lineTo(x, y);
         ctx.stroke();
         setHasFirma(true);
+        if (formError.includes("firma")) setFormError(""); // Limpia error si era por la firma
       };
 
       const stopDrawing = () => setIsDrawing(false);
@@ -241,7 +259,6 @@
         if (!file) return null;
         let fileToProcess = file;
         
-        // 1. Convertir HEIC a JPEG si es necesario
         if (file.type === 'image/heic' || file.name.toLowerCase().endsWith('.heic')) {
           try {
             const fileBlob = new Blob([file], { type: file.type || 'image/heic' });
@@ -255,7 +272,6 @@
         }
 
         return new Promise((resolve, reject) => {
-          // 2. Si es una IMAGEN, la comprimimos antes de enviarla
           if (fileToProcess.type.startsWith('image/')) {
             const reader = new FileReader();
             reader.readAsDataURL(fileToProcess);
@@ -263,25 +279,16 @@
               const img = new Image();
               img.src = event.target.result;
               img.onload = () => {
-                // Crear un canvas para redimensionar y comprimir
                 const canvas = document.createElement('canvas');
-                // Máximas dimensiones (HD)
                 const MAX_WIDTH = 1600; 
                 const MAX_HEIGHT = 1600;
                 let width = img.width;
                 let height = img.height;
 
-                // Calcular nueva proporción manteniendo el aspecto
                 if (width > height) {
-                  if (width > MAX_WIDTH) {
-                    height = Math.round(height *= MAX_WIDTH / width);
-                    width = MAX_WIDTH;
-                  }
+                  if (width > MAX_WIDTH) { height = Math.round(height *= MAX_WIDTH / width); width = MAX_WIDTH; }
                 } else {
-                  if (height > MAX_HEIGHT) {
-                    width = Math.round(width *= MAX_HEIGHT / height);
-                    height = MAX_HEIGHT;
-                  }
+                  if (height > MAX_HEIGHT) { width = Math.round(width *= MAX_HEIGHT / height); height = MAX_HEIGHT; }
                 }
 
                 canvas.width = width;
@@ -289,34 +296,23 @@
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(img, 0, 0, width, height);
 
-                // Exportar a Base64 con 70% de calidad JPEG (Ideal para documentos)
                 const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
                 const base64Data = dataUrl.split(',')[1];
                 
-                // Asegurarnos que el nombre termine en .jpg
                 let finalName = fileToProcess.name;
                 if(!finalName.toLowerCase().endsWith('.jpg') && !finalName.toLowerCase().endsWith('.jpeg')) {
                    finalName = finalName.replace(/\.[^/.]+$/, "") + ".jpg";
                 }
 
-                resolve({ 
-                  name: finalName, 
-                  mimeType: 'image/jpeg', 
-                  base64: base64Data 
-                });
+                resolve({ name: finalName, mimeType: 'image/jpeg', base64: base64Data });
               };
               img.onerror = (err) => reject(err);
             };
             reader.onerror = (err) => reject(err);
           } else {
-            // 3. Si NO es imagen (Ej: PDF), no se comprime, pasa directo.
             const reader = new FileReader();
             reader.readAsDataURL(fileToProcess);
-            reader.onload = () => resolve({ 
-              name: fileToProcess.name, 
-              mimeType: fileToProcess.type, 
-              base64: reader.result.split(',')[1] 
-            });
+            reader.onload = () => resolve({ name: fileToProcess.name, mimeType: fileToProcess.type, base64: reader.result.split(',')[1] });
             reader.onerror = error => reject(error);
           }
         });
@@ -334,16 +330,17 @@
         // Titular
         if (formData.titular.declaroAnterior === 'Si') await processFile(formData.titular.forma1040Doc, 'Titular_1040_Anterior');
         await processFile(formData.titular.ssnDoc, 'Titular_SSN_ITIN');
-        await processFile(formData.titular.idDoc, `Titular_ID_${formData.titular.tipoId}`);
+        if (formData.titular.tipoId && formData.titular.tipoId !== 'No tiene') await processFile(formData.titular.idDoc, `Titular_ID_${formData.titular.tipoId}`);
         if (formData.titular.esResidente === 'No') await processFile(formData.titular.permisoDoc, 'Titular_Permiso_Trabajo');
         
         // Cónyuge
         if (formData.titular.estadoCivil === 'Casado') {
           await processFile(formData.conyuge.ssnDoc, 'Conyuge_SSN_ITIN');
-          await processFile(formData.conyuge.idDoc, `Conyuge_ID_${formData.conyuge.tipoId}`);
+          if (formData.conyuge.tipoId && formData.conyuge.tipoId !== 'No tiene') await processFile(formData.conyuge.idDoc, `Conyuge_ID_${formData.conyuge.tipoId}`);
           if (formData.conyuge.esResidente === 'No') await processFile(formData.conyuge.permisoDoc, 'Conyuge_Permiso_Trabajo');
-          await processFile(formData.conyuge.matrimonioDoc, 'Matrimonio');
+          // Nota: El matrimonioDoc fue removido de aquí según requerimiento previo para evitar redundancia
         }
+        if (formData.titular.estadoCivil === 'Casado') await processFile(formData.titular.matrimonioDoc, 'Matrimonio');
 
         // Seguros
         for (let i = 0; i < formData.seguros.length; i++) {
@@ -354,7 +351,7 @@
         for (let i = 0; i < formData.dependientes.length; i++) {
           const dep = formData.dependientes[i];
           await processFile(dep.ssnDoc, `Dependiente_${i + 1}_SSN_ITIN`);
-          await processFile(dep.idDoc, `Dependiente_${i + 1}_ID_${dep.tipoId}`);
+          if (dep.tipoId && dep.tipoId !== 'No tiene') await processFile(dep.idDoc, `Dependiente_${i + 1}_ID_${dep.tipoId}`);
           if(dep.esResidente === 'No') await processFile(dep.permisoDoc, `Dependiente_${i + 1}_Permiso_Trabajo`);
           if(dep.parentesco === 'Hijo(a)') await processFile(dep.actaNacimientoDoc, `Dependiente_${i + 1}_Acta_Nacimiento`);
         }
@@ -377,11 +374,16 @@
         return filesArray;
       };
 
+      const handleInvalid = (e) => {
+        setFormError("⚠️ Faltan campos obligatorios por completar o fotos por subir. Por favor, revise los campos marcados en el formulario.");
+      };
+
       const handleSubmit = async (e) => {
-        e.preventDefault(); // Evita que la página se recargue
+        e.preventDefault(); 
+        setFormError(""); // Limpiar errores previos
 
         if (!hasFirma) {
-          alert("Por favor, firme la autorización al final del formulario antes de enviar.");
+          setFormError("⚠️ Por favor, firme la autorización al final del formulario antes de enviar.");
           return;
         }
 
@@ -421,7 +423,7 @@
       return (
         <div className="min-h-screen bg-gray-100 p-4 md:p-8 font-sans flex flex-col items-center">
           
-          <form onSubmit={handleSubmit} className="max-w-3xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden w-full">
+          <form onSubmit={handleSubmit} onInvalid={handleInvalid} className="max-w-3xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden w-full">
             
             {/* CABECERA */}
             <div className="bg-blue-600 p-6 text-white w-full">
@@ -461,16 +463,14 @@
                 <div className="mt-8 bg-gray-50 p-5 rounded-xl border border-gray-200 w-full">
                   <h3 className="text-md font-bold text-gray-700 mb-4">Documentación de Identidad</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4 w-full">
-                    <InputField label="SSN o ITIN" icon="fa-solid fa-id-card" placeholder="XXX-XX-XXXX" value={formData.titular.ssnNumero} onChange={(v) => handleInputChange('titular', 'ssnNumero', v)} />
+                    <InputField label="SSN o ITIN" icon="fa-solid fa-id-card" type="text" minLength={11} maxLength={11} placeholder="XXX-XX-XXXX" value={formData.titular.ssnNumero} onChange={(v) => handleInputChange('titular', 'ssnNumero', formatSSN(v))} />
                     <FileUploadField label="Foto/Documento del SSN o ITIN" section="titular" field="ssnDoc" file={formData.titular.ssnDoc} onChange={handleFileChange} />
                   </div>
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4 pt-4 border-t border-gray-200 w-full">
-                    <SelectField label="Documento de Identificación" value={formData.titular.tipoId} onChange={(v) => handleInputChange('titular', 'tipoId', v)} options={[ {value: 'Licencia', label: 'Licencia'}, {value: 'ID Estatal', label: 'ID Estatal'}, {value: 'Pasaporte', label: 'Pasaporte'} ]} />
-                    {formData.titular.tipoId && (
-                      <div className="animate-fade-in">
-                        <FileUploadField label={`Foto/Documento de ${formData.titular.tipoId}`} section="titular" field="idDoc" file={formData.titular.idDoc} onChange={handleFileChange} />
-                      </div>
+                    <SelectField label="Documento de Identificación" value={formData.titular.tipoId} onChange={(v) => handleInputChange('titular', 'tipoId', v)} options={[ {value: 'Licencia', label: 'Licencia'}, {value: 'ID Estatal', label: 'ID Estatal'}, {value: 'Pasaporte', label: 'Pasaporte'}, {value: 'No tiene', label: 'No tiene'} ]} />
+                    {formData.titular.tipoId && formData.titular.tipoId !== 'No tiene' && (
+                      <FileUploadField label={`Foto/Documento de ${formData.titular.tipoId}`} section="titular" field="idDoc" file={formData.titular.idDoc} onChange={handleFileChange} />
                     )}
                   </div>
 
@@ -487,6 +487,11 @@
                     {value: 'Soltero', label: 'Soltero(a)'}, {value: 'Casado', label: 'Casado(a)'}, {value: 'Divorciado', label: 'Divorciado(a)'}, {value: 'Viudo', label: 'Viudo(a)'}
                   ]} />
                 </div>
+                {formData.titular.estadoCivil === 'Casado' && (
+                  <div className="mt-6 bg-pink-50 p-5 rounded-xl border border-pink-100 animate-fade-in w-full">
+                    <FileUploadField label="Subir Certificado de Matrimonio" section="titular" field="matrimonioDoc" file={formData.titular.matrimonioDoc} onChange={handleFileChange} />
+                  </div>
+                )}
               </div>
 
               {/* SECCIÓN 2: CÓNYUGE */}
@@ -505,16 +510,14 @@
                   <div className="mt-8 bg-gray-50 p-5 rounded-xl border border-gray-200 w-full">
                     <h3 className="text-md font-bold text-gray-700 mb-4">Documentación de Identidad (Cónyuge)</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4 w-full">
-                      <InputField label="SSN o ITIN (Cónyuge)" icon="fa-solid fa-id-card" placeholder="XXX-XX-XXXX" value={formData.conyuge.ssnNumero} onChange={(v) => handleInputChange('conyuge', 'ssnNumero', v)} />
+                      <InputField label="SSN o ITIN (Cónyuge)" icon="fa-solid fa-id-card" type="text" minLength={11} maxLength={11} placeholder="XXX-XX-XXXX" value={formData.conyuge.ssnNumero} onChange={(v) => handleInputChange('conyuge', 'ssnNumero', formatSSN(v))} />
                       <FileUploadField label="Foto/Documento del SSN o ITIN" section="conyuge" field="ssnDoc" file={formData.conyuge.ssnDoc} onChange={handleFileChange} />
                     </div>
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4 pt-4 border-t border-gray-200 w-full">
-                      <SelectField label="Documento de Identificación" value={formData.conyuge.tipoId} onChange={(v) => handleInputChange('conyuge', 'tipoId', v)} options={[ {value: 'Licencia', label: 'Licencia'}, {value: 'ID Estatal', label: 'ID Estatal'}, {value: 'Pasaporte', label: 'Pasaporte'} ]} />
-                      {formData.conyuge.tipoId && (
-                        <div className="animate-fade-in">
-                          <FileUploadField label={`Foto/Documento de ${formData.conyuge.tipoId}`} section="conyuge" field="idDoc" file={formData.conyuge.idDoc} onChange={handleFileChange} />
-                        </div>
+                      <SelectField label="Documento de Identificación" value={formData.conyuge.tipoId} onChange={(v) => handleInputChange('conyuge', 'tipoId', v)} options={[ {value: 'Licencia', label: 'Licencia'}, {value: 'ID Estatal', label: 'ID Estatal'}, {value: 'Pasaporte', label: 'Pasaporte'}, {value: 'No tiene', label: 'No tiene'} ]} />
+                      {formData.conyuge.tipoId && formData.conyuge.tipoId !== 'No tiene' && (
+                        <FileUploadField label={`Foto/Documento de ${formData.conyuge.tipoId}`} section="conyuge" field="idDoc" file={formData.conyuge.idDoc} onChange={handleFileChange} />
                       )}
                     </div>
 
@@ -524,10 +527,6 @@
                         <div className="animate-fade-in"><FileUploadField label="Foto/Documento de Permiso de Trabajo" section="conyuge" field="permisoDoc" file={formData.conyuge.permisoDoc} onChange={handleFileChange} /></div>
                       )}
                     </div>
-                  </div>
-
-                  <div className="mt-6 bg-pink-50 p-5 rounded-xl border border-pink-100 animate-fade-in w-full">
-                    <FileUploadField label="Foto/Documento de Matrimonio" section="conyuge" field="matrimonioDoc" file={formData.conyuge.matrimonioDoc} onChange={handleFileChange} />
                   </div>
                 </div>
               )}
@@ -558,23 +557,21 @@
                         <SelectField label="Parentesco" value={dep.parentesco} onChange={(v) => handleDependienteChange(dep.id, 'parentesco', v)} options={[
                           {value: 'Hijo(a)', label: 'Hijo(a)'}, {value: 'Hijastro(a)', label: 'Hijastro(a)'}, {value: 'Hermano(a)', label: 'Hermano(a)'}, {value: 'Padre/Madre', label: 'Padre / Madre'}, {value: 'Otro', label: 'Otro'}
                         ]} />
-                        {dep.parentesco === 'Otro' && <div className="md:col-span-2 animate-fade-in"><InputField label="Relación con el Declarante" icon="fa-solid fa-users" value={dep.relacionOtro} onChange={(v) => handleDependienteChange(dep.id, 'relacionOtro', v)} /></div>}
+                        {dep.parentesco === 'Otro' && <div className="md:col-span-2 animate-fade-in"><InputField label="Relación con el Declarante" icon="fa-solid fa-users" placeholder="Ej. Sobrino, Nieto..." value={dep.relacionOtro} onChange={(v) => handleDependienteChange(dep.id, 'relacionOtro', v)} /></div>}
                         {dep.parentesco === 'Hijo(a)' && <div className="md:col-span-2 animate-fade-in"><FileUploadField label="Foto/Documento del Acta de Nacimiento" section="dep" field="actaNacimientoDoc" uniqueId={`dep-${dep.id}-acta`} file={dep.actaNacimientoDoc} onChange={(s, f, file) => handleDependienteFileChange(dep.id, 'actaNacimientoDoc', file)} /></div>}
                       </div>
 
                       <div className="mt-4 pt-4 border-t border-indigo-100 w-full">
                         <h4 className="text-sm font-bold text-indigo-900 mb-4">Documentación de Identidad</h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4 w-full">
-                          <InputField label="SSN o ITIN" icon="fa-solid fa-id-card" placeholder="XXX-XX-XXXX" value={dep.ssnNumero} onChange={(v) => handleDependienteChange(dep.id, 'ssnNumero', v)} />
+                          <InputField label="SSN o ITIN" icon="fa-solid fa-id-card" type="text" minLength={11} maxLength={11} placeholder="XXX-XX-XXXX" value={dep.ssnNumero} onChange={(v) => handleDependienteChange(dep.id, 'ssnNumero', formatSSN(v))} />
                           <FileUploadField label="Foto/Documento del SSN o ITIN" section="dep" field="ssnDoc" uniqueId={`dep-${dep.id}-ssn`} file={dep.ssnDoc} onChange={(s, f, file) => handleDependienteFileChange(dep.id, 'ssnDoc', file)} />
                         </div>
                         
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4 pt-4 border-t border-indigo-100 w-full">
-                          <SelectField label="Documento de Identificación" value={dep.tipoId} onChange={(v) => handleDependienteChange(dep.id, 'tipoId', v)} options={[ {value: 'Licencia', label: 'Licencia'}, {value: 'ID Estatal', label: 'ID Estatal'}, {value: 'Pasaporte', label: 'Pasaporte'} ]} />
-                          {dep.tipoId && (
-                            <div className="animate-fade-in">
-                              <FileUploadField label={`Foto/Documento de ${dep.tipoId}`} section="dep" field="idDoc" uniqueId={`dep-${dep.id}-idDoc`} file={dep.idDoc} onChange={(s, f, file) => handleDependienteFileChange(dep.id, 'idDoc', file)} />
-                            </div>
+                          <SelectField label="Documento de Identificación" value={dep.tipoId} onChange={(v) => handleDependienteChange(dep.id, 'tipoId', v)} options={[ {value: 'Licencia', label: 'Licencia'}, {value: 'ID Estatal', label: 'ID Estatal'}, {value: 'Pasaporte', label: 'Pasaporte'}, {value: 'No tiene', label: 'No tiene'} ]} />
+                          {dep.tipoId && dep.tipoId !== 'No tiene' && (
+                            <FileUploadField label={`Foto/Documento de ${dep.tipoId}`} section="dep" field="idDoc" uniqueId={`dep-${dep.id}-idDoc`} file={dep.idDoc} onChange={(s, f, file) => handleDependienteFileChange(dep.id, 'idDoc', file)} />
                           )}
                         </div>
 
@@ -624,7 +621,7 @@
                           </select>
                         </div>
 
-                        <div className="md:col-span-2"><InputField label="Descripción / Oficio" icon="fa-solid fa-file-alt" placeholder="Ej. Delivery, Uber, Construcción..." value={ing.descripcion} onChange={(v) => handleIngresoChange(ing.id, 'descripcion', v)} /></div>
+                        <div className="md:col-span-2"><InputField label="Descripción / Oficio" icon="fa-solid fa-file-alt" placeholder="Ej. Conductor, Limpieza, Construccion, etc." value={ing.descripcion} onChange={(v) => handleIngresoChange(ing.id, 'descripcion', v)} /></div>
                         
                         {ing.tipo === 'Cash' ? (
                           <div className="md:col-span-2 mt-2 bg-yellow-50 p-5 rounded-xl border border-yellow-200 w-full">
@@ -663,7 +660,7 @@
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 w-full">
                     <InputField label="Nombre Banco" icon="fa-solid fa-university" placeholder="Ej. Bank of America" value={formData.banco.nombre} onChange={(v) => handleInputChange('banco', 'nombre', v)} />
                     <SelectField label="Tipo de Cuenta" value={formData.banco.tipo} onChange={(v) => handleInputChange('banco', 'tipo', v)} options={[ {value: 'Checking', label: 'Checking'}, {value: 'Savings', label: 'Savings'} ]} />
-                    <InputField label="Ruta (Routing)" icon="fa-solid fa-credit-card" type="number" placeholder="Ej. 123456789" value={formData.banco.ruta} onChange={(v) => handleInputChange('banco', 'ruta', v)} />
+                    <InputField label="Ruta (Routing)" icon="fa-solid fa-credit-card" type="text" minLength={9} maxLength={9} placeholder="Ej. 123456789" value={formData.banco.ruta} onChange={(v) => handleInputChange('banco', 'ruta', formatRouting(v))} />
                     <InputField label="Cuenta (Account)" icon="fa-solid fa-credit-card" type="number" placeholder="Ej. 987654321" value={formData.banco.cuenta} onChange={(v) => handleInputChange('banco', 'cuenta', v)} />
                   </div>
                 </div>
@@ -780,7 +777,7 @@
               </div>
 
               {/* SECCIÓN 9: FIRMA DIGITAL */}
-              <div className="mb-10 w-full border-2 border-blue-600 rounded-2xl overflow-hidden shadow-lg">
+              <div className="mb-6 w-full border-2 border-blue-600 rounded-2xl overflow-hidden shadow-lg">
                 <div className="bg-blue-600 p-4 text-white flex items-center">
                   <i className="fa-solid fa-pen-nib mr-3 text-xl"></i>
                   <h2 className="text-xl font-bold">9. Autorización y Firma</h2>
@@ -802,15 +799,21 @@
                 </div>
               </div>
 
-              {/* ESTADO DE ENVÍO */}
+              {/* ESTADO DE ENVÍO Y ALERTAS */}
+              {formError && (
+                <div className="mb-6 p-4 bg-red-50 text-red-800 rounded-lg flex items-start border border-red-200 animate-fade-in">
+                  <i className="fa-solid fa-triangle-exclamation mr-3 mt-1 text-red-600 text-xl"></i>
+                  <div className="text-sm font-bold">{formError}</div>
+                </div>
+              )}
               {conversionWarnings.length > 0 && (
-                <div className="mb-6 p-4 bg-yellow-50 text-yellow-800 rounded-lg flex items-start"><i className="fa-solid fa-exclamation-triangle mr-3 mt-1 text-yellow-500 text-xl"></i><div className="text-sm">Archivos HEIC enviados en formato original.</div></div>
+                <div className="mb-6 p-4 bg-yellow-50 text-yellow-800 rounded-lg flex items-start border border-yellow-200"><i className="fa-solid fa-exclamation-triangle mr-3 mt-1 text-yellow-500 text-xl"></i><div className="text-sm">Archivos HEIC procesados internamente.</div></div>
               )}
               {submitStatus === 'success' && (
-                <div className="mb-6 p-4 bg-green-100 text-green-800 rounded-lg flex items-center"><i className="fa-solid fa-check-circle mr-3 text-2xl"></i><div><strong>¡Éxito!</strong> Formulario enviado correctamente.</div></div>
+                <div className="mb-6 p-4 bg-green-50 text-green-800 rounded-lg flex items-center border border-green-200"><i className="fa-solid fa-check-circle mr-3 text-2xl text-green-600"></i><div><strong>¡Éxito!</strong> Formulario enviado correctamente.</div></div>
               )}
               {submitStatus === 'error' && (
-                <div className="mb-6 p-4 bg-red-100 text-red-800 rounded-lg"><i className="fa-solid fa-times-circle mr-3"></i><strong>Error:</strong> Problema de conexión.</div>
+                <div className="mb-6 p-4 bg-red-100 text-red-800 rounded-lg border border-red-200"><i className="fa-solid fa-times-circle mr-3"></i><strong>Error:</strong> Problema de conexión al servidor.</div>
               )}
 
               <div className="border-t pt-6 flex justify-end w-full">

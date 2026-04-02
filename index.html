@@ -83,6 +83,80 @@
       </div>
     );
 
+    // COMPONENTE DE FECHA DINÁMICO E INTELIGENTE
+    const DateSelectField = ({ label, value, onChange, required = true }) => {
+      // 1. A prueba del tiempo: Rango de 100 años hacia atrás desde el año actual
+      const currentYear = new Date().getFullYear();
+      const years = Array.from({ length: 100 }, (_, i) => currentYear - i);
+      const months = [
+        { v: '01', l: 'Ene' }, { v: '02', l: 'Feb' }, { v: '03', l: 'Mar' },
+        { v: '04', l: 'Abr' }, { v: '05', l: 'May' }, { v: '06', l: 'Jun' },
+        { v: '07', l: 'Jul' }, { v: '08', l: 'Ago' }, { v: '09', l: 'Sep' },
+        { v: '10', l: 'Oct' }, { v: '11', l: 'Nov' }, { v: '12', l: 'Dic' }
+      ];
+
+      // El valor guardado en el form viene como "YYYY-MM-DD"
+      const parts = (value || '').split('-');
+      const y = parts[0] || '';
+      const m = parts[1] || '';
+      const d = parts[2] || '';
+
+      // 2. Cálculo inteligente de días (considera años bisiestos)
+      const getDaysInMonth = (year, month) => {
+        if (!month) return 31;
+        const yNum = year ? parseInt(year) : 2024; // 2024 (bisiesto) por defecto si aún no escoge año
+        return new Date(yNum, parseInt(month), 0).getDate();
+      };
+
+      const daysCount = getDaysInMonth(y, m);
+      const days = Array.from({ length: daysCount }, (_, i) => String(i + 1).padStart(2, '0'));
+
+      const handleChange = (type, val) => {
+        let newY = type === 'y' ? val : y;
+        let newM = type === 'm' ? val : m;
+        let newD = type === 'd' ? val : d;
+
+        // Auto-ajustar si el día seleccionado no existe en el nuevo mes (ej. 31 en febrero pasa a 28/29)
+        if (newM && newD) {
+            const maxDays = getDaysInMonth(newY, newM);
+            if (parseInt(newD) > maxDays) newD = String(maxDays).padStart(2, '0');
+        }
+
+        if (!newY && !newM && !newD) {
+            onChange('');
+        } else {
+            onChange(`${newY}-${newM}-${newD}`);
+        }
+      };
+
+      return (
+        <div className="flex flex-col space-y-1.5 mb-4 min-w-0">
+          <label className="text-sm font-semibold text-gray-700 truncate">{label} {required && <span className="text-red-500">*</span>}</label>
+          <div className="flex space-x-2">
+            <div className="flex-1 relative">
+              <i className="fa-solid fa-calendar-alt absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none text-lg"></i>
+              <select required={required} className="w-full min-h-[46px] pl-10 p-2.5 border border-gray-300 rounded-lg shadow-sm outline-none bg-white appearance-none focus:ring-2 focus:ring-blue-500 transition-all text-gray-800" value={m} onChange={(e) => handleChange('m', e.target.value)}>
+                <option value="">Mes</option>
+                {months.map(mo => <option key={mo.v} value={mo.v}>{mo.l}</option>)}
+              </select>
+            </div>
+            <div className="flex-1">
+              <select required={required} className="w-full min-h-[46px] p-2.5 border border-gray-300 rounded-lg shadow-sm outline-none bg-white appearance-none focus:ring-2 focus:ring-blue-500 transition-all text-center text-gray-800" value={d} onChange={(e) => handleChange('d', e.target.value)}>
+                <option value="">Día</option>
+                {days.map(day => <option key={day} value={day}>{day}</option>)}
+              </select>
+            </div>
+            <div className="flex-1">
+              <select required={required} className="w-full min-h-[46px] p-2.5 border border-gray-300 rounded-lg shadow-sm outline-none bg-white appearance-none focus:ring-2 focus:ring-blue-500 transition-all text-center text-gray-800" value={y} onChange={(e) => handleChange('y', e.target.value)}>
+                <option value="">Año</option>
+                {years.map(year => <option key={year} value={year}>{year}</option>)}
+              </select>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
     const TextAreaField = ({ label, icon, placeholder, value, onChange, required = true }) => (
       <div className="flex flex-col space-y-1.5 mb-4 min-w-0">
         <label className="text-sm font-semibold text-gray-700 truncate">{label} {required && <span className="text-red-500">*</span>}</label>
@@ -127,7 +201,7 @@
       const [isSubmitting, setIsSubmitting] = useState(false);
       const [submitStatus, setSubmitStatus] = useState(null);
       const [conversionWarnings, setConversionWarnings] = useState([]); 
-      const [formError, setFormError] = useState(""); // Estado para errores de validación visuales
+      const [formError, setFormError] = useState(""); 
       
       // FIRMA DIGITAL
       const canvasRef = useRef(null);
@@ -208,7 +282,7 @@
         ctx.lineTo(x, y);
         ctx.stroke();
         setHasFirma(true);
-        if (formError.includes("firma")) setFormError(""); // Limpia error si era por la firma
+        if (formError.includes("firma")) setFormError(""); 
       };
 
       const stopDrawing = () => setIsDrawing(false);
@@ -338,7 +412,6 @@
           await processFile(formData.conyuge.ssnDoc, 'Conyuge_SSN_ITIN');
           if (formData.conyuge.tipoId && formData.conyuge.tipoId !== 'No tiene') await processFile(formData.conyuge.idDoc, `Conyuge_ID_${formData.conyuge.tipoId}`);
           if (formData.conyuge.esResidente === 'No') await processFile(formData.conyuge.permisoDoc, 'Conyuge_Permiso_Trabajo');
-          // Nota: El matrimonioDoc fue removido de aquí según requerimiento previo para evitar redundancia
         }
         if (formData.titular.estadoCivil === 'Casado') await processFile(formData.titular.matrimonioDoc, 'Matrimonio');
 
@@ -380,7 +453,7 @@
 
       const handleSubmit = async (e) => {
         e.preventDefault(); 
-        setFormError(""); // Limpiar errores previos
+        setFormError(""); 
 
         if (!hasFirma) {
           setFormError("⚠️ Por favor, firme la autorización al final del formulario antes de enviar.");
@@ -454,11 +527,17 @@
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 w-full">
                   <InputField label="Nombres" icon="fa-solid fa-user" placeholder="Ej. Juan" value={formData.titular.nombres} onChange={(v) => handleInputChange('titular', 'nombres', v)} />
                   <InputField label="Apellidos" icon="fa-solid fa-user" placeholder="Ej. Pérez" value={formData.titular.apellidos} onChange={(v) => handleInputChange('titular', 'apellidos', v)} />
-                  <InputField label="Fecha de Nacimiento" icon="fa-solid fa-calendar-alt" type="date" value={formData.titular.dob} onChange={(v) => handleInputChange('titular', 'dob', v)} />
+                  
+                  <div className="md:col-span-2">
+                    <DateSelectField label="Fecha de Nacimiento" value={formData.titular.dob} onChange={(v) => handleInputChange('titular', 'dob', v)} />
+                  </div>
+                  
                   <InputField label="Teléfono" icon="fa-solid fa-phone" type="tel" placeholder="(123) 456-7890" value={formData.titular.telefono} onChange={(v) => handleInputChange('titular', 'telefono', v)} />
+                  <InputField label="Correo Electrónico" icon="fa-solid fa-envelope" type="email" placeholder="correo@ejemplo.com" value={formData.titular.correo} onChange={(v) => handleInputChange('titular', 'correo', v)} />
                 </div>
-                <InputField label="Dirección Completa" icon="fa-solid fa-map-marker-alt" placeholder="123 Main St, Apt 4, Orlando, FL 32801" value={formData.titular.direccion} onChange={(v) => handleInputChange('titular', 'direccion', v)} />
-                <InputField label="Correo Electrónico" icon="fa-solid fa-envelope" type="email" placeholder="correo@ejemplo.com" value={formData.titular.correo} onChange={(v) => handleInputChange('titular', 'correo', v)} />
+                <div className="mt-2">
+                  <InputField label="Dirección Completa" icon="fa-solid fa-map-marker-alt" placeholder="123 Main St, Apt 4, Orlando, FL 32801" value={formData.titular.direccion} onChange={(v) => handleInputChange('titular', 'direccion', v)} />
+                </div>
 
                 <div className="mt-8 bg-gray-50 p-5 rounded-xl border border-gray-200 w-full">
                   <h3 className="text-md font-bold text-gray-700 mb-4">Documentación de Identidad</h3>
@@ -470,7 +549,9 @@
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4 pt-4 border-t border-gray-200 w-full">
                     <SelectField label="Documento de Identificación" value={formData.titular.tipoId} onChange={(v) => handleInputChange('titular', 'tipoId', v)} options={[ {value: 'Licencia', label: 'Licencia'}, {value: 'ID Estatal', label: 'ID Estatal'}, {value: 'Pasaporte', label: 'Pasaporte'}, {value: 'No tiene', label: 'No tiene'} ]} />
                     {formData.titular.tipoId && formData.titular.tipoId !== 'No tiene' && (
-                      <FileUploadField label={`Foto/Documento de ${formData.titular.tipoId}`} section="titular" field="idDoc" file={formData.titular.idDoc} onChange={handleFileChange} />
+                      <div className="animate-fade-in">
+                        <FileUploadField label={`Foto/Documento de ${formData.titular.tipoId}`} section="titular" field="idDoc" file={formData.titular.idDoc} onChange={handleFileChange} />
+                      </div>
                     )}
                   </div>
 
@@ -501,11 +582,17 @@
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 w-full">
                     <InputField label="Nombres" icon="fa-solid fa-user" placeholder="Ej. María" value={formData.conyuge.nombres} onChange={(v) => handleInputChange('conyuge', 'nombres', v)} />
                     <InputField label="Apellidos" icon="fa-solid fa-user" placeholder="Ej. Gómez" value={formData.conyuge.apellidos} onChange={(v) => handleInputChange('conyuge', 'apellidos', v)} />
-                    <InputField label="Fecha de Nacimiento" icon="fa-solid fa-calendar-alt" type="date" value={formData.conyuge.dob} onChange={(v) => handleInputChange('conyuge', 'dob', v)} />
+                    
+                    <div className="md:col-span-2">
+                      <DateSelectField label="Fecha de Nacimiento" value={formData.conyuge.dob} onChange={(v) => handleInputChange('conyuge', 'dob', v)} />
+                    </div>
+                    
                     <InputField label="Teléfono" icon="fa-solid fa-phone" type="tel" placeholder="(123) 456-7890" value={formData.conyuge.telefono} onChange={(v) => handleInputChange('conyuge', 'telefono', v)} />
+                    <InputField label="Correo Electrónico" icon="fa-solid fa-envelope" type="email" placeholder="correo@ejemplo.com" value={formData.conyuge.correo} onChange={(v) => handleInputChange('conyuge', 'correo', v)} />
                   </div>
-                  <InputField label="Dirección Completa" icon="fa-solid fa-map-marker-alt" placeholder="Misma dirección o indicar nueva" value={formData.conyuge.direccion} onChange={(v) => handleInputChange('conyuge', 'direccion', v)} />
-                  <InputField label="Correo Electrónico" icon="fa-solid fa-envelope" type="email" placeholder="correo@ejemplo.com" value={formData.conyuge.correo} onChange={(v) => handleInputChange('conyuge', 'correo', v)} />
+                  <div className="mt-2">
+                    <InputField label="Dirección Completa" icon="fa-solid fa-map-marker-alt" placeholder="Misma dirección o indicar nueva" value={formData.conyuge.direccion} onChange={(v) => handleInputChange('conyuge', 'direccion', v)} />
+                  </div>
 
                   <div className="mt-8 bg-gray-50 p-5 rounded-xl border border-gray-200 w-full">
                     <h3 className="text-md font-bold text-gray-700 mb-4">Documentación de Identidad (Cónyuge)</h3>
@@ -517,7 +604,9 @@
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4 pt-4 border-t border-gray-200 w-full">
                       <SelectField label="Documento de Identificación" value={formData.conyuge.tipoId} onChange={(v) => handleInputChange('conyuge', 'tipoId', v)} options={[ {value: 'Licencia', label: 'Licencia'}, {value: 'ID Estatal', label: 'ID Estatal'}, {value: 'Pasaporte', label: 'Pasaporte'}, {value: 'No tiene', label: 'No tiene'} ]} />
                       {formData.conyuge.tipoId && formData.conyuge.tipoId !== 'No tiene' && (
-                        <FileUploadField label={`Foto/Documento de ${formData.conyuge.tipoId}`} section="conyuge" field="idDoc" file={formData.conyuge.idDoc} onChange={handleFileChange} />
+                        <div className="animate-fade-in">
+                          <FileUploadField label={`Foto/Documento de ${formData.conyuge.tipoId}`} section="conyuge" field="idDoc" file={formData.conyuge.idDoc} onChange={handleFileChange} />
+                        </div>
                       )}
                     </div>
 
@@ -552,7 +641,10 @@
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 w-full">
                         <InputField label="Nombres" icon="fa-solid fa-user" placeholder="Ej. Carlos" value={dep.nombres} onChange={(v) => handleDependienteChange(dep.id, 'nombres', v)} />
                         <InputField label="Apellidos" icon="fa-solid fa-user" placeholder="Ej. Pérez" value={dep.apellidos} onChange={(v) => handleDependienteChange(dep.id, 'apellidos', v)} />
-                        <InputField label="Fecha de Nacimiento" icon="fa-solid fa-calendar-alt" type="date" value={dep.dob} onChange={(v) => handleDependienteChange(dep.id, 'dob', v)} />
+                        
+                        <div className="md:col-span-2">
+                          <DateSelectField label="Fecha de Nacimiento" value={dep.dob} onChange={(v) => handleDependienteChange(dep.id, 'dob', v)} />
+                        </div>
                         
                         <SelectField label="Parentesco" value={dep.parentesco} onChange={(v) => handleDependienteChange(dep.id, 'parentesco', v)} options={[
                           {value: 'Hijo(a)', label: 'Hijo(a)'}, {value: 'Hijastro(a)', label: 'Hijastro(a)'}, {value: 'Hermano(a)', label: 'Hermano(a)'}, {value: 'Padre/Madre', label: 'Padre / Madre'}, {value: 'Otro', label: 'Otro'}
@@ -571,7 +663,9 @@
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4 pt-4 border-t border-indigo-100 w-full">
                           <SelectField label="Documento de Identificación" value={dep.tipoId} onChange={(v) => handleDependienteChange(dep.id, 'tipoId', v)} options={[ {value: 'Licencia', label: 'Licencia'}, {value: 'ID Estatal', label: 'ID Estatal'}, {value: 'Pasaporte', label: 'Pasaporte'}, {value: 'No tiene', label: 'No tiene'} ]} />
                           {dep.tipoId && dep.tipoId !== 'No tiene' && (
-                            <FileUploadField label={`Foto/Documento de ${dep.tipoId}`} section="dep" field="idDoc" uniqueId={`dep-${dep.id}-idDoc`} file={dep.idDoc} onChange={(s, f, file) => handleDependienteFileChange(dep.id, 'idDoc', file)} />
+                            <div className="animate-fade-in">
+                              <FileUploadField label={`Foto/Documento de ${dep.tipoId}`} section="dep" field="idDoc" uniqueId={`dep-${dep.id}-idDoc`} file={dep.idDoc} onChange={(s, f, file) => handleDependienteFileChange(dep.id, 'idDoc', file)} />
+                            </div>
                           )}
                         </div>
 
